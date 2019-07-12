@@ -18,7 +18,7 @@ import (
 //WriteToTar takes in list of volumes and saves info to tarfile in archive
 func WriteToTar() {
 
-	//read
+	//write
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -43,7 +43,7 @@ func WriteToTar() {
 		log.Fatal(err)
 	}
 
-	//write
+	//read
 	tr := tar.NewReader(&buf)
 	for {
 		hdr, err := tr.Next()
