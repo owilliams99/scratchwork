@@ -2,11 +2,10 @@ package tarball
 
 import (
 	"archive/tar"
-	"bytes"
-	"fmt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"context"
 
@@ -15,49 +14,54 @@ import (
 	"github.com/docker/docker/client"
 )
 
-//WriteToTar takes in list of volumes and saves info to tarfile in archive
+//WriteToTar tars any found volumes
 func WriteToTar() {
-
-	//write
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-
 	volumes, _ := ListVolumes()
-
 	for _, vol := range volumes {
-		volName := vol.Name + ".txt"
-
-		hdr := &tar.Header{
-			Name: volName,
-			Size: int64(len(vol.Mountpoint)),
-		}
-
-		if err := tw.WriteHeader(hdr); err != nil {
-			log.Fatal(err)
-		}
-		if _, err := tw.Write([]byte(vol.Mountpoint)); err != nil {
-			log.Fatal(err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		log.Fatal(err)
-	}
-
-	//read
-	tr := tar.NewReader(&buf)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break // End of archive
-		}
+		dir, err := os.Open(vol.Mountpoint)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Contents of %s:\n", hdr.Name)
-		if _, err := io.Copy(os.Stdout, tr); err != nil {
+		defer dir.Close()
+
+		files, err := dir.Readdir(0)
+		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println()
+
+		destfile := vol.Name + ".tar"
+
+		//
+		tarfile, err := os.Create(destfile)
+		defer tarfile.Close()
+
+		var fileWriter io.WriteCloser = tarfile
+
+		tarfileWriter := tar.NewWriter(fileWriter)
+		defer tarfileWriter.Close()
+
+		for _, fileInfo := range files {
+
+			if fileInfo.IsDir() {
+				continue
+			}
+
+			file, err := os.Open(dir.Name() + string(filepath.Separator) + fileInfo.Name())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer file.Close()
+
+			header := new(tar.Header)
+			header.Name = file.Name()
+			header.Size = fileInfo.Size()
+			header.Mode = int64(fileInfo.Mode())
+			header.ModTime = fileInfo.ModTime()
+
+			err = tarfileWriter.WriteHeader(header)
+
+			_, err = io.Copy(tarfileWriter, file)
+		}
 	}
 
 }
