@@ -1,9 +1,13 @@
 package tarball
 
 import (
+	"fmt"
 	"testing"
 )
 
 func TestWriteToTar(t *testing.T) {
-	WriteToTar()
+	err := WriteToTar()
+	if err != nil {
+		fmt.Println(err)
+	}
 }

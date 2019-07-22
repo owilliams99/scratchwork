@@ -2,34 +2,31 @@ package tarball
 
 import (
 	"archive/tar"
+	"compress/gzip"
+	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
-	"context"
-
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/client"
+	V "github.com/gspivey/drayage/volume"
 )
 
 //WriteToTar tars any found volumes
-func WriteToTar() {
-	volumes, _ := ListVolumes()
+func WriteToTar() (err error) {
+	volumes, err := V.ListVolumes()
 	for _, vol := range volumes {
 		dir, err := os.Open(vol.Mountpoint)
 		if err != nil {
-			log.Fatal(err)
+			return fmt.Errorf("can't open %v (did you use sudo?)", vol.Name)
 		}
 		defer dir.Close()
 
 		files, err := dir.Readdir(0)
 		if err != nil {
-			log.Fatal(err)
+			return fmt.Errorf("can't read directory")
 		}
 
-		destfile := vol.Name + ".tar"
+		destfile := vol.Name + ".tgz"
 
 		//
 		tarfile, err := os.Create(destfile)
@@ -37,7 +34,10 @@ func WriteToTar() {
 
 		var fileWriter io.WriteCloser = tarfile
 
-		tarfileWriter := tar.NewWriter(fileWriter)
+		fileWriter = gzip.NewWriter(tarfile) //gzip filter
+		defer fileWriter.Close()
+
+		tarfileWriter := tar.NewWriter(fileWriter) //tar filter
 		defer tarfileWriter.Close()
 
 		for _, fileInfo := range files {
@@ -48,7 +48,7 @@ func WriteToTar() {
 
 			file, err := os.Open(dir.Name() + string(filepath.Separator) + fileInfo.Name())
 			if err != nil {
-				log.Fatal(err)
+				return fmt.Errorf("can't open file %v", fileInfo.Name())
 			}
 			defer file.Close()
 
@@ -63,22 +63,5 @@ func WriteToTar() {
 			_, err = io.Copy(tarfileWriter, file)
 		}
 	}
-
-}
-
-//ListVolumes is straight copy from docker.go
-func ListVolumes() (volumeList []*types.Volume, err error) {
-	cli, err := client.NewClientWithOpts(client.WithVersion("1.39"))
-	if err != nil {
-		return volumeList, err
-	}
-
-	emptyArgs := filters.Args{}
-	//
-	volumeListBody, err := cli.VolumeList(context.Background(), emptyArgs)
-	if err != nil {
-		return volumeList, err
-	}
-	volumeList = volumeListBody.Volumes
-	return volumeList, err
+	return nil
 }
